@@ -30,7 +30,7 @@ func main() {
 	// Use cases
 	reserveUC := usecase.NewReserveUseCase(invRepo, resRepo, transactor)
 	returnUC := usecase.NewReturnUseCase(invRepo, resRepo, transactor)
-	deliverUC := usecase.NewDeliverUseCase(invRepo, resRepo)
+	deliverUC := usecase.NewDeliverUseCase(invRepo, resRepo, transactor)
 
 	// Delivery
 	handler := httpdelivery.NewHandler(reserveUC, returnUC, deliverUC)
