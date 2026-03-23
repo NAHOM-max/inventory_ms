@@ -4,8 +4,8 @@ import "net/http"
 
 func NewRouter(h *Handler) http.Handler {
 	mux := http.NewServeMux()
-	mux.HandleFunc("POST /reservations", h.Reserve)
-	mux.HandleFunc("POST /reservations/{id}/return", h.Return)
-	mux.HandleFunc("POST /reservations/{id}/deliver", h.Deliver)
+	mux.HandleFunc("POST /reserve", h.Reserve)
+	mux.HandleFunc("POST /return", h.Return)
+	mux.HandleFunc("POST /deliver", h.Deliver)
 	return mux
 }

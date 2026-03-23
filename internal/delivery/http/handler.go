@@ -2,8 +2,10 @@ package http
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 
+	"inventory_ms/internal/domain"
 	"inventory_ms/internal/usecase"
 )
 
@@ -18,18 +20,77 @@ func NewHandler(r *usecase.ReserveUseCase, ret *usecase.ReturnUseCase, d *usecas
 }
 
 func (h *Handler) Reserve(w http.ResponseWriter, r *http.Request) {
-	// TODO: decode request, call h.reserve.Execute
-	w.WriteHeader(http.StatusAccepted)
+	var req reserveRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	items := make([]usecase.ReserveItemInput, len(req.Items))
+	for i, it := range req.Items {
+		items[i] = usecase.ReserveItemInput{ProductID: it.ProductID, Amount: it.Amount}
+	}
+
+	err := h.reserve.Execute(r.Context(), usecase.ReserveInput{
+		OrderID: req.OrderID,
+		Items:   items,
+	})
+	if err != nil {
+		writeError(w, domainStatus(err), err.Error())
+		return
+	}
+
+	w.WriteHeader(http.StatusCreated)
 }
 
 func (h *Handler) Return(w http.ResponseWriter, r *http.Request) {
-	// TODO: decode request, call h.ret.Execute
-	w.WriteHeader(http.StatusAccepted)
+	var req orderRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	if err := h.ret.Execute(r.Context(), req.OrderID); err != nil {
+		writeError(w, domainStatus(err), err.Error())
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
 }
 
 func (h *Handler) Deliver(w http.ResponseWriter, r *http.Request) {
-	// TODO: decode request, call h.deliver.Execute
-	w.WriteHeader(http.StatusAccepted)
+	var req orderRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	if err := h.deliver.Execute(r.Context(), req.OrderID); err != nil {
+		writeError(w, domainStatus(err), err.Error())
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+}
+
+// domainStatus maps domain sentinel errors to HTTP status codes.
+func domainStatus(err error) int {
+	switch {
+	case errors.Is(err, domain.ErrNotFound):
+		return http.StatusNotFound
+	case errors.Is(err, domain.ErrInsufficientStock):
+		return http.StatusConflict
+	case errors.Is(err, domain.ErrInvalidTransition):
+		return http.StatusConflict
+	case errors.Is(err, domain.ErrInsufficientReserve):
+		return http.StatusConflict
+	default:
+		return http.StatusInternalServerError
+	}
+}
+
+func writeError(w http.ResponseWriter, status int, msg string) {
+	writeJSON(w, status, errorResponse{Error: msg})
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {
