@@ -29,26 +29,24 @@ func NewReserveUseCase(
 	res domain.ReservationRepository,
 	tx domain.Transactor,
 ) *ReserveUseCase {
-	return &ReserveUseCase{
-		inventoryRepo:   inv,
-		reservationRepo: res,
-		transactor:      tx,
-	}
+	return &ReserveUseCase{inventoryRepo: inv, reservationRepo: res, transactor: tx}
 }
 
 func (uc *ReserveUseCase) Execute(ctx context.Context, input ReserveInput) error {
-	// Step 1 — idempotency check (outside transaction, cheap read).
+	if err := validateReserveInput(input); err != nil {
+		return err
+	}
+
+	// Cheap pre-check outside the transaction for the common case.
 	_, err := uc.reservationRepo.GetByOrderID(ctx, input.OrderID)
 	if err == nil {
-		// Reservation already exists — return success.
-		return nil
+		return nil // already reserved — idempotent success
 	}
 	if !errors.Is(err, domain.ErrNotFound) {
 		return fmt.Errorf("check existing reservation: %w", err)
 	}
 
 	return uc.transactor.WithinTransaction(ctx, func(ctx context.Context) error {
-		// Step 2 — lock inventory rows (SELECT FOR UPDATE).
 		productIDs := make([]string, len(input.Items))
 		for i, it := range input.Items {
 			productIDs[i] = it.ProductID
@@ -59,31 +57,29 @@ func (uc *ReserveUseCase) Execute(ctx context.Context, input ReserveInput) error
 			return fmt.Errorf("lock inventory: %w", err)
 		}
 
-		// Index locked rows by product ID for O(1) lookup.
 		stock := make(map[string]*domain.Inventory, len(rows))
 		for i := range rows {
 			stock[rows[i].ProductID] = &rows[i]
 		}
 
-		// Step 3 — validate stock for every requested item.
+		// Validate all items before mutating any.
 		for _, it := range input.Items {
 			inv, ok := stock[it.ProductID]
 			if !ok {
 				return fmt.Errorf("product %s: %w", it.ProductID, domain.ErrNotFound)
 			}
 			if !inv.CanReserve(it.Amount) {
-				return fmt.Errorf("product %s: %w", it.ProductID, domain.ErrInsufficientStock)
+				free := inv.AvailableAmount - inv.ReservedAmount
+				return domain.NewStockError(it.ProductID, it.Amount, free, domain.ErrInsufficientStock)
 			}
 		}
 
-		// Step 4 — mutate in-memory inventory (Reserve only raises reserved_amount).
 		for _, it := range input.Items {
 			if err := stock[it.ProductID].Reserve(it.Amount); err != nil {
 				return fmt.Errorf("reserve product %s: %w", it.ProductID, err)
 			}
 		}
 
-		// Step 5 — persist updated inventory in one batch write.
 		updated := make([]domain.Inventory, 0, len(stock))
 		for _, inv := range stock {
 			updated = append(updated, *inv)
@@ -92,21 +88,40 @@ func (uc *ReserveUseCase) Execute(ctx context.Context, input ReserveInput) error
 			return fmt.Errorf("update inventory batch: %w", err)
 		}
 
-		// Step 6 — build and persist the reservation.
 		reservation := buildReservation(input, stock)
 		if err := uc.reservationRepo.Create(ctx, reservation); err != nil {
+			// Another concurrent request won the race and already created it — idempotent.
+			if errors.Is(err, domain.ErrAlreadyExists) {
+				return nil
+			}
 			return fmt.Errorf("create reservation: %w", err)
 		}
 
-		// Step 7 — transaction committed by Transactor on nil return.
 		return nil
 	})
+}
+
+func validateReserveInput(input ReserveInput) error {
+	if input.OrderID == "" {
+		return domain.NewValidationError("order_id", "must not be empty")
+	}
+	if len(input.Items) == 0 {
+		return domain.NewValidationError("items", "must contain at least one item")
+	}
+	for _, it := range input.Items {
+		if it.ProductID == "" {
+			return domain.NewValidationError("items.product_id", "must not be empty")
+		}
+		if it.Amount <= 0 {
+			return domain.NewValidationError("items.amount", fmt.Sprintf("must be positive, got %d for product %s", it.Amount, it.ProductID))
+		}
+	}
+	return nil
 }
 
 func buildReservation(input ReserveInput, stock map[string]*domain.Inventory) domain.Reservation {
 	items := make([]domain.ReservationItem, len(input.Items))
 	var total float64
-
 	for i, it := range input.Items {
 		linePrice := stock[it.ProductID].ProductPrice * float64(it.Amount)
 		items[i] = domain.ReservationItem{
@@ -116,7 +131,6 @@ func buildReservation(input ReserveInput, stock map[string]*domain.Inventory) do
 		}
 		total += linePrice
 	}
-
 	return domain.Reservation{
 		OrderID:    input.OrderID,
 		Status:     domain.StatusReserved,

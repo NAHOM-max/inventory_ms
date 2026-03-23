@@ -78,11 +78,11 @@ func domainStatus(err error) int {
 	switch {
 	case errors.Is(err, domain.ErrNotFound):
 		return http.StatusNotFound
-	case errors.Is(err, domain.ErrInsufficientStock):
-		return http.StatusConflict
-	case errors.Is(err, domain.ErrInvalidTransition):
-		return http.StatusConflict
-	case errors.Is(err, domain.ErrInsufficientReserve):
+	case errors.Is(err, domain.ErrInvalidInput):
+		return http.StatusBadRequest
+	case errors.Is(err, domain.ErrInsufficientStock),
+		errors.Is(err, domain.ErrInsufficientReserve),
+		errors.Is(err, domain.ErrInvalidTransition):
 		return http.StatusConflict
 	default:
 		return http.StatusInternalServerError

@@ -22,30 +22,31 @@ func NewDeliverUseCase(
 }
 
 func (uc *DeliverUseCase) Execute(ctx context.Context, orderID string) error {
+	if orderID == "" {
+		return domain.NewValidationError("order_id", "must not be empty")
+	}
+
 	return uc.transactor.WithinTransaction(ctx, func(ctx context.Context) error {
-		// Step 1 — lock the reservation row.
 		reservation, err := uc.reservationRepo.LockByOrderID(ctx, orderID)
 		if err != nil {
 			return fmt.Errorf("lock reservation %s: %w", orderID, err)
 		}
 
-		// Step 2 — idempotency: already delivered, safe to return success.
+		// Idempotent: already delivered.
 		if reservation.Status == domain.StatusDelivered {
 			return nil
 		}
 
-		// Step 2 — guard: only RESERVED reservations can be delivered.
+		// Guard: only RESERVED → DELIVERED is valid.
 		if reservation.Status != domain.StatusReserved {
-			return fmt.Errorf("order %s has status %s: %w", orderID, reservation.Status, domain.ErrInvalidTransition)
+			return domain.NewTransitionError(orderID, reservation.Status, domain.StatusDelivered)
 		}
 
-		// Step 3 — fetch reservation items.
 		items, err := uc.reservationRepo.GetItems(ctx, orderID)
 		if err != nil {
 			return fmt.Errorf("get items for order %s: %w", orderID, err)
 		}
 
-		// Step 4 — lock inventory rows (SELECT FOR UPDATE).
 		productIDs := make([]string, len(items))
 		for i, it := range items {
 			productIDs[i] = it.ProductID
@@ -61,18 +62,17 @@ func (uc *DeliverUseCase) Execute(ctx context.Context, orderID string) error {
 			stock[rows[i].ProductID] = &rows[i]
 		}
 
-		// Step 5 — deliver each item: reduces both available_amount and reserved_amount.
 		for _, it := range items {
 			inv, ok := stock[it.ProductID]
 			if !ok {
 				return fmt.Errorf("product %s: %w", it.ProductID, domain.ErrNotFound)
 			}
 			if err := inv.Deliver(it.Amount); err != nil {
-				return fmt.Errorf("deliver product %s: %w", it.ProductID, err)
+				free := inv.AvailableAmount - inv.ReservedAmount
+				return domain.NewStockError(it.ProductID, it.Amount, free, domain.ErrInsufficientStock)
 			}
 		}
 
-		// Step 6 — persist updated inventory.
 		updated := make([]domain.Inventory, 0, len(stock))
 		for _, inv := range stock {
 			updated = append(updated, *inv)
@@ -81,7 +81,6 @@ func (uc *DeliverUseCase) Execute(ctx context.Context, orderID string) error {
 			return fmt.Errorf("update inventory batch: %w", err)
 		}
 
-		// Step 7 — mark reservation as DELIVERED.
 		if err := uc.reservationRepo.UpdateStatus(ctx, orderID, domain.StatusDelivered); err != nil {
 			return fmt.Errorf("update reservation status: %w", err)
 		}
