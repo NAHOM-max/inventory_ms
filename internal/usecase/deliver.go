@@ -3,15 +3,15 @@ package usecase
 import (
 	"context"
 
-	"inventory_ms/internal/repository"
+	"inventory_ms/internal/domain"
 )
 
 type DeliverUseCase struct {
-	inventoryRepo   repository.InventoryRepository
-	reservationRepo repository.ReservationRepository
+	inventoryRepo   domain.InventoryRepository
+	reservationRepo domain.ReservationRepository
 }
 
-func NewDeliverUseCase(inv repository.InventoryRepository, res repository.ReservationRepository) *DeliverUseCase {
+func NewDeliverUseCase(inv domain.InventoryRepository, res domain.ReservationRepository) *DeliverUseCase {
 	return &DeliverUseCase{inventoryRepo: inv, reservationRepo: res}
 }
 

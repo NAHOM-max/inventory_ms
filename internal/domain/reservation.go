@@ -1,20 +1,22 @@
 package domain
 
-import "time"
-
 type ReservationStatus string
 
 const (
-	ReservationActive    ReservationStatus = "active"
-	ReservationReturned  ReservationStatus = "returned"
-	ReservationDelivered ReservationStatus = "delivered"
+	StatusReserved  ReservationStatus = "RESERVED"
+	StatusReturned  ReservationStatus = "RETURNED"
+	StatusDelivered ReservationStatus = "DELIVERED"
 )
 
+type ReservationItem struct {
+	ProductID  string
+	Amount     int
+	TotalPrice float64
+}
+
 type Reservation struct {
-	ID          string
-	ItemID      string
-	Quantity    int
-	Status      ReservationStatus
-	ReservedAt  time.Time
-	ResolvedAt  *time.Time
+	OrderID    string
+	Status     ReservationStatus
+	TotalPrice float64
+	Items      []ReservationItem
 }
