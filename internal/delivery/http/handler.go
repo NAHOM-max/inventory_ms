@@ -40,7 +40,7 @@ func (h *Handler) Reserve(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	w.WriteHeader(http.StatusCreated)
+	writeJSON(w, http.StatusCreated, reserveResponse{ReservationID: "res-" + req.OrderID})
 }
 
 func (h *Handler) Return(w http.ResponseWriter, r *http.Request) {

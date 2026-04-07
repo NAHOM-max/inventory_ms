@@ -14,6 +14,10 @@ type orderRequest struct {
 	OrderID string `json:"order_id"`
 }
 
+type reserveResponse struct {
+	ReservationID string `json:"reservation_id"`
+}
+
 type errorResponse struct {
 	Error string `json:"error"`
 }
