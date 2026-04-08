@@ -18,6 +18,10 @@ type reserveResponse struct {
 	ReservationID string `json:"reservation_id"`
 }
 
+type returnResponse struct {
+	Message string `json:"message"`
+}
+
 type errorResponse struct {
 	Error string `json:"error"`
 }

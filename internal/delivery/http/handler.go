@@ -31,11 +31,10 @@ func (h *Handler) Reserve(w http.ResponseWriter, r *http.Request) {
 		items[i] = usecase.ReserveItemInput{ProductID: it.ProductID, Amount: it.Amount}
 	}
 
-	err := h.reserve.Execute(r.Context(), usecase.ReserveInput{
+	if err := h.reserve.Execute(r.Context(), usecase.ReserveInput{
 		OrderID: req.OrderID,
 		Items:   items,
-	})
-	if err != nil {
+	}); err != nil {
 		writeError(w, domainStatus(err), err.Error())
 		return
 	}
@@ -55,7 +54,7 @@ func (h *Handler) Return(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	w.WriteHeader(http.StatusOK)
+	writeJSON(w, http.StatusOK, returnResponse{Message: "items successfully returned"})
 }
 
 func (h *Handler) Deliver(w http.ResponseWriter, r *http.Request) {
