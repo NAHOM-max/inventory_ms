@@ -36,7 +36,7 @@ func main() {
 	handleDeliveryUC := usecase.NewHandleDeliveryConfirmedUseCase(inboxRepo, transactor)
 
 	// Kafka consumer
-	brokers := []string{"localhost:9094"}
+	brokers := []string{"localhost:9092"}
 	consumer := kafkaconsumer.NewDeliveryConfirmedConsumer(brokers, handleDeliveryUC)
 	go consumer.Run(context.Background())
 
