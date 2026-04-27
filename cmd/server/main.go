@@ -1,13 +1,14 @@
 package main
 
 import (
+	"context"
 	"log"
 	"net/http"
 
+	httpdelivery "inventory_ms/internal/delivery/http"
+	kafkaconsumer "inventory_ms/internal/delivery/kafka"
 	"inventory_ms/internal/infrastructure/database"
 	"inventory_ms/internal/usecase"
-
-	httpdelivery "inventory_ms/internal/delivery/http"
 )
 
 func main() {
@@ -23,6 +24,7 @@ func main() {
 	// Repositories
 	invRepo := database.NewPostgresInventoryRepo(db)
 	resRepo := database.NewPostgresReservationRepo(db)
+	inboxRepo := database.NewPostgresInboxRepo(db)
 
 	// Transactor
 	transactor := database.NewPostgresTransactor(db)
@@ -31,8 +33,14 @@ func main() {
 	reserveUC := usecase.NewReserveUseCase(invRepo, resRepo, transactor)
 	returnUC := usecase.NewReturnUseCase(invRepo, resRepo, transactor)
 	deliverUC := usecase.NewDeliverUseCase(invRepo, resRepo, transactor)
+	handleDeliveryUC := usecase.NewHandleDeliveryConfirmedUseCase(inboxRepo, transactor)
 
-	// Delivery
+	// Kafka consumer
+	brokers := []string{"localhost:9094"}
+	consumer := kafkaconsumer.NewDeliveryConfirmedConsumer(brokers, handleDeliveryUC)
+	go consumer.Run(context.Background())
+
+	// HTTP delivery
 	handler := httpdelivery.NewHandler(reserveUC, returnUC, deliverUC)
 	router := httpdelivery.NewRouter(handler)
 
