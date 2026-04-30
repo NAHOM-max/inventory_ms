@@ -13,7 +13,15 @@ var (
 	ErrInsufficientReserve = errors.New("insufficient reserved amount")
 	ErrInvalidTransition   = errors.New("invalid status transition")
 	ErrInvalidInput        = errors.New("invalid input")
+	ErrNonRetryable        = errors.New("non-retryable error")
 )
+
+// NonRetryableError wraps any error that must go straight to DLQ without retries.
+type NonRetryableError struct{ cause error }
+
+func NewNonRetryableError(cause error) *NonRetryableError { return &NonRetryableError{cause: cause} }
+func (e *NonRetryableError) Error() string                { return e.cause.Error() }
+func (e *NonRetryableError) Unwrap() error                { return ErrNonRetryable }
 
 // StockError carries the product ID alongside the stock sentinel.
 type StockError struct {

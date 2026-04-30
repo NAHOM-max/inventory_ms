@@ -35,9 +35,14 @@ func main() {
 	deliverUC := usecase.NewDeliverUseCase(invRepo, resRepo, transactor)
 	handleDeliveryUC := usecase.NewHandleDeliveryConfirmedUseCase(inboxRepo, transactor)
 
-	// Kafka consumer
-	brokers := []string{"localhost:9092"}
-	consumer := kafkaconsumer.NewDeliveryConfirmedConsumer(brokers, handleDeliveryUC)
+	// Kafka consumer + DLQ
+	brokers := []string{"localhost:9094"}
+	dlqProducer := kafkaconsumer.NewKafkaDLQProducer(brokers)
+	consumer := kafkaconsumer.NewDeliveryConfirmedConsumer(
+		kafkaconsumer.ConsumerConfig{Brokers: brokers, MaxRetries: 3},
+		handleDeliveryUC,
+		dlqProducer,
+	)
 	go consumer.Run(context.Background())
 
 	// HTTP delivery
